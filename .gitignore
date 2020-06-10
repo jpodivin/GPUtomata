@@ -1,0 +1,26 @@
+# Visual Studio
+Release/
+Debug/
+bin/
+obj/
+*.ncb
+*.vcproj*
+*.suo
+*.user
+*.sln.cache
+*.manifest
+*.CodeAnalysisLog.xml
+*.lastcodeanalysissucceeded
+*.diagsession
+*.vspx
+.vs/
+
+# binaries
+*.dll
+*.dll.config
+*.so
+*.dylib
+*.pdb
+*.mdb
+*.exe
+*.out
