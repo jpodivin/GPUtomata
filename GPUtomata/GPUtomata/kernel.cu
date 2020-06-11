@@ -10,7 +10,8 @@ int checkRuleset(std::vector<int> transitionRules);
 void setGliderTest(int* currentState, int size);
 void printState(int* currentState, int size);
 void initField(std::vector<int>& currentState, std::vector<int>& newState, int size, bool gliderTest);
-void automatonSetup(int& size, int& runTime, std::vector<int>& ruleSet);
+void automatonSetup(int& size, int& runTime, bool& randomInit, std::vector<int>& ruleSet);
+void printDelimiter(std::string delimiter, int outputSize);
 
 __global__ void iterateRule(int* newState, int* currentState, int size, int* ruleset) {
 
@@ -61,24 +62,22 @@ __global__ void iterateRule(int* newState, int* currentState, int size, int* rul
 int main()
 {
 
-    int size = 190;
+    int size = 0;
     std::vector<int> currentState;
     std::vector<int> newState;
     std::vector<int> transitionRules;  
+    const std::string delimiter = "-";
     /*
     N*M vector
     N stands for the number of possible states of a cell
     M for the number of transition rules A -> B, where B is any state.
     */
 
-    int runTime = 100000;
+    int runTime = 0;
     cudaError_t cudaStatus;
-    std::vector<std::vector<int>> allConfs = { };
-    std::vector<int> surviveStates = { 2, 3 };
-    std::vector<int> birthStates = { 3 };
     bool random = true;
            
-    automatonSetup(size, runTime, transitionRules);
+    automatonSetup(size, runTime, random, transitionRules);
 
     newState.resize(size * size);
     currentState.resize(size * size);
@@ -87,7 +86,7 @@ int main()
     initField(currentState, newState, size, !random);
 
     printState(currentState.data(), size);
-    printf("\n-\n");
+    printDelimiter(delimiter, size);
 
     while (runTime > 0) {
         //Iterate in parallel
@@ -101,7 +100,7 @@ int main()
         if (runTime % 100 == 0) {
             
             printState(newState.data(), size);
-            printf("\n-\n");
+            printDelimiter(delimiter, size);
         }
         //Copy new state to current state, clean up new state
         for (int i = 0; i < size * size; i++) {
@@ -209,7 +208,7 @@ void initField(std::vector<int> &currentState, std::vector<int> &newState, int s
 
 }
 
-void automatonSetup(int& size, int& runTime, std::vector<int>& ruleSet)
+void automatonSetup(int& size, int& runTime, bool& randomInit, std::vector<int>& ruleSet)
 {
     std::vector<std::vector<int>> allConfs = { };
     std::vector<int> surviveStates = { 2, 3 };
@@ -253,7 +252,28 @@ void automatonSetup(int& size, int& runTime, std::vector<int>& ruleSet)
         }
     }
 
+    while (true)
+    {
+        printf(" \nInitialize field with standard glider? N will result in random initial state. Y/N: ");
+        std::getline(std::cin, arg);
+        
+        if (arg.compare("Y") == 0 || arg.compare("y") == 0) {
+            randomInit = false;
+            arg.clear();
+            break;
+        }
+        else if (arg.compare("N") == 0 || arg.compare("n") == 0) {
+            randomInit = true;
+            arg.clear();
+            break;
+        }
+        else {
+            printf("Invalid string entered. Please enter Y or N.");
+        } 
+    }
+
     while (true) {
+
         printf(" \nEnter list of all states for 0 -> 1 transition, as number of active cells separated by space char: ");
         std::getline(std::cin, arg);
         std::stringstream argStream (arg);
@@ -300,6 +320,17 @@ void automatonSetup(int& size, int& runTime, std::vector<int>& ruleSet)
     ruleSet = ruleTranslation(allConfs);
 }
 
+void printDelimiter(std::string delimiter, int outputSize)
+{
+    printf("\n");
+
+    for (int delimiterWidth = 0; delimiterWidth < outputSize; delimiterWidth++) {
+        printf(delimiter.c_str());
+    }
+
+    printf("\n");
+}
+
 // Helper function for using CUDA to update state of the field.
 cudaError_t iterateWithCuda(std::vector<int> &newState, std::vector<int> &currentState, unsigned int size, std::vector<int> ruleset)
 {
@@ -307,6 +338,7 @@ cudaError_t iterateWithCuda(std::vector<int> &newState, std::vector<int> &curren
     int* dev_newState = 0;
     int* dev_ruleset = 0;
     int* newStateArr = newState.data();
+
     cudaError_t cudaStatus;
 
     int blockSize = 32;
