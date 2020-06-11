@@ -16,8 +16,8 @@ void printDelimiter(std::string delimiter, int outputSize);
 __global__ void iterateRule(int* newState, int* currentState, int size, int* ruleset) {
 
     /*
-    Using block number, block size and thread id to derive grid coordinates. 
-    The same principle used in array to grid translation in following loops.
+        Using block number, block size and thread id to derive grid coordinates. 
+        The same principle used in array to grid translation in following loops.
     */
     int index = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -49,7 +49,7 @@ __global__ void iterateRule(int* newState, int* currentState, int size, int* rul
         }
     }
     /*
-    Extendable to more states. If I wanted to build a library this would be replaced by loop.
+        Extendable to more states. If I wanted to build a library this would be replaced by a loop.
     */
     if (currentState[index] == 0) {
         newState[index] = ruleset[sum];
@@ -68,9 +68,9 @@ int main()
     std::vector<int> transitionRules;  
     const std::string delimiter = "-";
     /*
-    N*M vector
-    N stands for the number of possible states of a cell
-    M for the number of transition rules A -> B, where B is any state.
+        N*M vector
+        N stands for the number of possible states of a cell
+        M for the number of transition rules A -> B, where B is any state.
     */
 
     int runTime = 0;
@@ -81,7 +81,6 @@ int main()
 
     newState.resize(size * size);
     currentState.resize(size * size);
-
 
     initField(currentState, newState, size, !random);
 
@@ -123,7 +122,7 @@ int main()
 
 std::vector<int> ruleTranslation(std::vector<std::vector<int>> transitionRules) {
     /*
-    Sets up ruleset vector of size N*M. 
+        Sets up ruleset vector of size N*M. 
     */
 
     std::vector<int> ruleset(transitionRules.size()*10);
@@ -143,6 +142,10 @@ std::vector<int> ruleTranslation(std::vector<std::vector<int>> transitionRules) 
 
 int checkRuleset(std::vector<int> transitionRules)
 {
+    /*
+        Checks that transition rules submitted don't require impossible states or contain redundant transitions.
+    */
+
     if (transitionRules.size() > 9) {
         return 1;
     }
@@ -160,8 +163,8 @@ int checkRuleset(std::vector<int> transitionRules)
 void setGliderTest(int* currentState, int size)
 {
     /*
-    Standard minimal GOL glider set roughly in center of the field. 
-    Won't work in all possible rulesets but it is a good way to test behavior.
+        Standard minimal GOL glider set roughly in center of the field. 
+        Won't work in all possible rulesets but it is a good way to test behavior.
     */
     int yStart = int(((size * size) / 2) / size);
     int xStart = (int((size * size) / 2) % size) + 2;
@@ -175,22 +178,24 @@ void setGliderTest(int* currentState, int size)
 
 void printState(int* currentState, int size)
 {
+    /*
+        Self explanatory iteration over all elements printing their states.
+        Since the states of elements are integers the lines might get a bit unenven.
+    */
     for (int i = 0; i < size * size; i++)
     {
         if (i % size == 0) {
             printf("\n");
         }
-        if (currentState[i] == 1) {
-            printf("%d ", currentState[i]);
-        }
-        else {
-            printf(" ");
-        }       
+        printf("%d ", currentState[i]);             
     }
 }
 
 void initField(std::vector<int> &currentState, std::vector<int> &newState, int size, bool gliderTest)
 {
+    /*
+        Initializes field with either random values or preset pattern. 
+    */
 
     for (int i = 0; i < size * size; i++)
     {
@@ -202,6 +207,7 @@ void initField(std::vector<int> &currentState, std::vector<int> &newState, int s
         }
         newState[i] = 0;
     }
+
     if (gliderTest) {
         setGliderTest(currentState.data(), size);
     }
@@ -221,7 +227,9 @@ void automatonSetup(int& size, int& runTime, bool& randomInit, std::vector<int>&
         printf("Enter field size: ");
         std::getline(std::cin, arg);
         size = std::stoi(arg);
+
         arg.clear();
+
         if (size > MAX_SIZE) {
             printf("Too large field size entered. \nPlease enter number < %d!", MAX_SIZE);
             size = 0;
@@ -322,6 +330,10 @@ void automatonSetup(int& size, int& runTime, bool& randomInit, std::vector<int>&
 
 void printDelimiter(std::string delimiter, int outputSize)
 {
+    /*
+        Prints selected delimiter string to separate two states of field in the output. 
+    */
+
     printf("\n");
 
     for (int delimiterWidth = 0; delimiterWidth < outputSize; delimiterWidth++) {
@@ -338,12 +350,16 @@ cudaError_t iterateWithCuda(std::vector<int> &newState, std::vector<int> &curren
     int* dev_newState = 0;
     int* dev_ruleset = 0;
     int* newStateArr = newState.data();
-
+    
     cudaError_t cudaStatus;
-
+    
     int blockSize = 32;
     int numBlocks = (size + blockSize - 1) / blockSize;
 
+    /*
+        Most of this huge condition block is lifted straight from tutorial.
+        I don't really like the goto statements all over the place. Might replace in the future.
+    */
     // Choose which GPU to run on, change this on a multi-GPU system.
     cudaStatus = cudaSetDevice(0);
     if (cudaStatus != cudaSuccess) {
@@ -381,7 +397,12 @@ cudaError_t iterateWithCuda(std::vector<int> &newState, std::vector<int> &curren
         fprintf(stderr, "cudaMemcpy failed!");
         goto Error;
     }
-    // Launch a kernel on the GPU with one thread for each element.
+
+    
+    /*
+        This essentially devides field into smaller pieces that are then processed in parallel fashion.
+        The assumption is that field CAN be divided in one go.
+    */
     iterateRule << <numBlocks, blockSize >> > (dev_newState, dev_currentState, int(sqrt(size)), dev_ruleset);
 
     // Check for any errors launching the kernel
