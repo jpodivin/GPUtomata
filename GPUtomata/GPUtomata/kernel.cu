@@ -5,13 +5,17 @@
 int main();
 
 cudaError_t iterateWithCuda(std::vector<int>& newState, std::vector<int>& currentState, unsigned int size, std::vector<int> ruleset);
+
 std::vector<int> ruleTranslation(std::vector<std::vector<int>> transitionRules);
 int checkRuleset(std::vector<int> transitionRules);
+
 void setGliderTest(int* currentState, int size);
-void printState(int* currentState, int size);
 void initField(std::vector<int>& currentState, std::vector<int>& newState, int size, bool gliderTest);
+
 void automatonSetup(int& size, int& runTime, bool& randomInit, std::vector<int>& ruleSet);
+
 void printDelimiter(std::string delimiter, int outputSize);
+void printState(int* currentState, int size);
 
 __global__ void iterateRule(int* newState, int* currentState, int size, int* ruleset) {
 
@@ -26,6 +30,7 @@ __global__ void iterateRule(int* newState, int* currentState, int size, int* rul
     int row;
     int col;
     int sum = 0;
+
     /*
       This can be done with one statement since the neighborhood is defined by known offsets. 
       However the compiler will probably end up with equivalent result anyway, plus this way it's more intelligeble.    
@@ -48,6 +53,7 @@ __global__ void iterateRule(int* newState, int* currentState, int size, int* rul
             sum += currentState[col + (row * size)];
         }
     }
+
     /*
         Extendable to more states. If I wanted to build a library this would be replaced by a loop.
     */
@@ -67,6 +73,7 @@ int main()
     std::vector<int> newState;
     std::vector<int> transitionRules;  
     const std::string delimiter = "-";
+
     /*
         N*M vector
         N stands for the number of possible states of a cell
@@ -121,6 +128,7 @@ int main()
 }
 
 std::vector<int> ruleTranslation(std::vector<std::vector<int>> transitionRules) {
+
     /*
         Sets up ruleset vector of size N*M. 
     */
@@ -166,6 +174,7 @@ void setGliderTest(int* currentState, int size)
         Standard minimal GOL glider set roughly in center of the field. 
         Won't work in all possible rulesets but it is a good way to test behavior.
     */
+
     int yStart = int(((size * size) / 2) / size);
     int xStart = (int((size * size) / 2) % size) + 2;
 
@@ -349,7 +358,7 @@ cudaError_t iterateWithCuda(std::vector<int> &newState, std::vector<int> &curren
     int* dev_currentState = 0;
     int* dev_newState = 0;
     int* dev_ruleset = 0;
-    int* newStateArr = newState.data();
+    int* newStateArr = newState.data();    
     
     cudaError_t cudaStatus;
     
@@ -357,45 +366,71 @@ cudaError_t iterateWithCuda(std::vector<int> &newState, std::vector<int> &curren
     int numBlocks = (size + blockSize - 1) / blockSize;
 
     /*
-        Most of this huge condition block is lifted straight from tutorial.
-        I don't really like the goto statements all over the place. Might replace in the future.
+        Most of this huge condition block is lifted straight from the tutorial.
+        I just got rid of the goto. Arguably I replaced it with also ugly equivalent,
+        repeating memory dealocation block, but it was a solution requiring the least work.
     */
+
     // Choose which GPU to run on, change this on a multi-GPU system.
     cudaStatus = cudaSetDevice(0);
     if (cudaStatus != cudaSuccess) {
         fprintf(stderr, "cudaSetDevice failed!  Do you have a CUDA-capable GPU installed?");
-        goto Error;
+        return cudaStatus;
     }
 
-    // Allocate GPU buffers for three vectors (two for states, one for ruleset)    .
+    // Allocate GPU buffers for three vectors (two for states, one for ruleset).
     cudaStatus = cudaMalloc((void**)&dev_currentState, size * sizeof(int));
     if (cudaStatus != cudaSuccess) {
         fprintf(stderr, "cudaMalloc failed!");
-        goto Error;
+
+        cudaFree(dev_currentState);
+
+
+        return cudaStatus;
     }
 
     cudaStatus = cudaMalloc((void**)&dev_newState, size * sizeof(int));
     if (cudaStatus != cudaSuccess) {
         fprintf(stderr, "cudaMalloc failed!");
-        goto Error;
+
+        cudaFree(dev_currentState);
+        cudaFree(dev_newState);
+
+        return cudaStatus;
     }
 
     cudaStatus = cudaMalloc((void**)&dev_ruleset, ruleset.size() * sizeof(int));
     if (cudaStatus != cudaSuccess) {
         fprintf(stderr, "cudaMalloc failed!");
-        goto Error;
+
+        cudaFree(dev_currentState);
+        cudaFree(dev_newState);
+        cudaFree(dev_ruleset);
+
+        return cudaStatus;
     }
 
     // Copy input vectors from host memory to GPU buffers.
     cudaStatus = cudaMemcpy(dev_currentState, currentState.data(), size * sizeof(int), cudaMemcpyHostToDevice);
     if (cudaStatus != cudaSuccess) {
         fprintf(stderr, "cudaMemcpy failed!");
-        goto Error;
+
+        cudaFree(dev_currentState);
+        cudaFree(dev_newState);
+        cudaFree(dev_ruleset);
+
+        return cudaStatus;
     }
+
     cudaStatus = cudaMemcpy(dev_ruleset, ruleset.data(), ruleset.size() * sizeof(int), cudaMemcpyHostToDevice);
     if (cudaStatus != cudaSuccess) {
         fprintf(stderr, "cudaMemcpy failed!");
-        goto Error;
+
+        cudaFree(dev_currentState);
+        cudaFree(dev_newState);
+        cudaFree(dev_ruleset);
+
+        return cudaStatus;
     }
 
     
@@ -409,7 +444,12 @@ cudaError_t iterateWithCuda(std::vector<int> &newState, std::vector<int> &curren
     cudaStatus = cudaGetLastError();
     if (cudaStatus != cudaSuccess) {
         fprintf(stderr, "iterateWithCuda launch failed: %s\n", cudaGetErrorString(cudaStatus));
-        goto Error;
+
+        cudaFree(dev_currentState);
+        cudaFree(dev_newState);
+        cudaFree(dev_ruleset);
+
+        return cudaStatus;
     }
 
     // cudaDeviceSynchronize waits for the kernel to finish, and returns
@@ -417,20 +457,23 @@ cudaError_t iterateWithCuda(std::vector<int> &newState, std::vector<int> &curren
     cudaStatus = cudaDeviceSynchronize();
     if (cudaStatus != cudaSuccess) {
         fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching iterateRule!\n", cudaStatus);
-        goto Error;
+
+        cudaFree(dev_currentState);
+        cudaFree(dev_newState);
+        cudaFree(dev_ruleset);
+
+        return cudaStatus;
     }
 
     // Copy new state of the field from GPU buffer to host memory.
     cudaStatus = cudaMemcpy(newStateArr, dev_newState, size * sizeof(int), cudaMemcpyDeviceToHost);
-
     if (cudaStatus != cudaSuccess) {
         fprintf(stderr, "cudaMemcpy failed!");
-        goto Error;
     }
 
-Error:
     cudaFree(dev_currentState);
     cudaFree(dev_newState);
     cudaFree(dev_ruleset);
+
     return cudaStatus;
 }
